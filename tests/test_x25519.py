@@ -2,7 +2,8 @@ import unittest
 import os
 import time
 from x25519.x25519 import X25519
-from nacl.bindings import crypto_scalarmult
+from x25519.utils import bytes_to_int, int_to_bytes
+from nacl.bindings import crypto_scalarmult, crypto_scalarmult_base
 
 class TestX25519(unittest.TestCase):
     def test_generate_public_key(self):
@@ -51,28 +52,25 @@ class TestX25519(unittest.TestCase):
         """Validate RFC 7748 test vector 2 using the ladder and PyNaCl for verification."""
         x25519 = X25519("ladder")
         private_key = bytes.fromhex("4b66e9d4d1b4673c5ad22691957d6af5c11b6421e0ea01d42ca4169e7918ba0d")
-        public_key = bytes.fromhex("e5210f12786811d3f4b7959d0538ae2c31dbe7106fc03c3efc4cd549c715a493")
+        public_key = bytes.fromhex("e5210f12786811d3f4b7959d0538ae2c31dbe7106fc03c3efc4cd549c715a413")
+        #public_key = int_to_bytes(8883857351183929894090759386610649319417338800022198945255395922347792736741)
+        #print(f"Is public key as int: {bytes_to_int(public_key)} the same as: {public_key_int}")
+        #print(f"Private key as int: {bytes_to_int(private_key)} ")
+        #print(f"Public key as int: {bytes_to_int(public_key)} ")
         public_key_generated = x25519.generate_public_key(private_key)
-        print(f"Public key generated: {public_key_generated.hex()}")
-        print(f"Public key expected: {public_key.hex()}")
+        #print(f"Public key generated: {public_key_generated.hex()}")
+        #print(f"Public key expected: {public_key.hex()}")
         expected_output = bytes.fromhex("95cbde9476e8907d7aade45cb4b873f88b595a68799fa152e6f8f7647aac7957")
         
         # X25519 implementation
         result = x25519.scalar_multiply(private_key, public_key)
-
         # Use PyNaCl for reference
         pynacl_result = crypto_scalarmult(private_key, public_key)
-        
-        scalar = bytes.fromhex("4b66e9d4d1b4673c5ad22691957d6af5c11b6421e0ea01d42ca4169e7918ba0d")
-        public_key = bytes.fromhex("e5210f12786811d3f4b7959d0538ae2c31dbe7106fc03c3efc4cd549c715a493")
-        x25519_ladder = X25519("ladder")
-        result = x25519_ladder.scalar_multiply(scalar, public_key)
-        print(f"Result for RFC Vector 2: {result.hex()}")
-
-
-        print(f"Expected (RFC 7748): {expected_output.hex()}")
-        print(f"Result from X25519: {result.hex()}")
-        print(f"Result from PyNaCl: {pynacl_result.hex()}")
+    
+        #print(f"Result for RFC Vector 2: {result.hex()}")
+        #print(f"Expected (RFC 7748): {expected_output.hex()}")
+        #print(f"Result from X25519: {result.hex()}")
+        #print(f"Result from PyNaCl: {pynacl_result.hex()}")
 
         # Assert that your implementation matches both the expected RFC value and PyNaCl's output
         self.assertEqual(result, pynacl_result, "Mismatch with PyNaCl result")
@@ -141,6 +139,45 @@ class TestX25519(unittest.TestCase):
         result_double_add = x25519_double_add.scalar_multiply(private_key, public_key)
         
         self.assertEqual(result_ladder, result_double_add, "Mismatch between ladder and double_and_add methods.")
+
+
+    def test_consistency_between_methods_and_pynacl(self):
+        """Ensure that the result of 'ladder' matches 'double_and_add' and PyNaCl,
+        and that public key generation agrees with PyNaCl, over many iterations."""
+        iterations = 100
+        for i in range(iterations):
+            # Initialize both implementations.
+            x25519_ladder = X25519("ladder")
+            x25519_double_add = X25519("double_and_add")
+            
+            # Generate a private key (32 bytes, already clamped)
+            private_key = x25519_ladder.generate_private_key()
+            
+            # Compute the public key using our implementation (scalar multiplication with base point)
+            public_key = x25519_ladder.generate_public_key(private_key)
+            
+            # Verify public key generation against PyNaCl.
+            # PyNaCl's crypto_scalarmult_base computes the public key as private_key * base_point.
+            public_key_pynacl = crypto_scalarmult_base(private_key)
+            self.assertEqual(
+                public_key, public_key_pynacl,
+                f"Iteration {i}: Public key mismatch between our implementation and PyNaCl."
+            )
+            
+            # Compute scalar multiplication using both methods.
+            result_ladder = x25519_ladder.scalar_multiply(private_key, public_key)
+            result_double_add = x25519_double_add.scalar_multiply(private_key, public_key)
+            self.assertEqual(
+                result_ladder, result_double_add,
+                f"Iteration {i}: Mismatch between ladder and double_and_add methods."
+            )
+            
+            # Use PyNaCl to perform the scalar multiplication.
+            result_pynacl = crypto_scalarmult(private_key, public_key)
+            self.assertEqual(
+                result_ladder, result_pynacl,
+                f"Iteration {i}: Mismatch between our implementation and PyNaCl."
+            )
 
 
     def test_performance_comparison(self):

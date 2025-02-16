@@ -44,6 +44,7 @@ class MontgomeryLadder:
         p = self.p
         a24 = self.a24
         x1, _ = P  # We only use the x-coordinate
+        x1 = x1 % (1 << 255) # MASK TO ENSURE 255 BITS
 
         # Initialize projective coordinates:
         # (x2 : z2) = (1 : 0) represents the point at infinity,
@@ -68,6 +69,7 @@ class MontgomeryLadder:
 
         # Convert the projective coordinate (x2:z2) to the affine x-coordinate.
         x_final = field_mul(x2, mult_inverse(z2, p), p)
+        #print(f"Multiplying scalar: {scalar} with point: {P} using Montgomery ladder gives x: {x_final}")
         return (x_final, None)
 
     def _ladder_step(self, x2: int, z2: int, x3: int, z3: int, x1: int) -> Tuple[int, int, int, int]:

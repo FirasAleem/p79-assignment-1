@@ -5,7 +5,6 @@ from x25519.montgomery_double_add import MontgomeryDoubleAdd
 from typing import Literal
 
 P = 2**255 - 19  # Prime modulus for Curve25519
-BASE_X = 9  # x-coordinate of the base point for Curve25519
 
 
 class X25519:
@@ -39,7 +38,10 @@ class X25519:
         
         if self.method == 'ladder':
             ladder = MontgomeryLadder(p=P)
+            #print(f"scalar: {scalar}")
+            #rint(f"u: {u}")
             result_x, _ = ladder.scalar_multiply(scalar, (u, None))
+            #print(f"result_x: {result_x}")
         else:  # method == 'double_and_add'
             double_add = MontgomeryDoubleAdd(A=486662, p=P)
             y_coordinate = calculate_y_coordinate(u, 486662, P)
@@ -71,5 +73,6 @@ class X25519:
         Returns:
             32-byte public key.
         """
-        return self.scalar_multiply(private_key, int_to_bytes(BASE_X))
+        BASE_X = b'\x09' + b'\x00' * 31 # x-coordinate of the base point for Curve25519
+        return self.scalar_multiply(private_key, BASE_X)
 
