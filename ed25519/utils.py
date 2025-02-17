@@ -4,7 +4,7 @@ import hashlib
 # Prime modulus (same as Curve25519)
 prime_mod = 2**255 - 19
 
-# d = -121665/121666 mod P (for Ed25519, with a = -1)
+# d = -121665/121666 mod P
 d = (-121665 * mult_inverse(121666, prime_mod)) % prime_mod
 
 # Order of the base-point subgroup

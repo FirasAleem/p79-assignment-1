@@ -17,7 +17,7 @@ from ed25519.utils import (
 # The prime modulus (same as for Curve25519)
 P = 2**255 - 19
 
-# Compute d = -121665/121666 mod P (for Ed25519, a = -1)
+# Compute d = -121665/121666 mod P
 d = (-121665 * mult_inverse(121666, P)) % P
 
 # Order of the base-point subgroup (a prime number)
@@ -74,9 +74,6 @@ class Ed25519:
         
         # Step 5
         R_point = edwards_scalar_mult(r, self.B)
-        # print(f"R_point: {R_point}")
-        # R_point = normalize_extended(R_point)
-        # print(f"R_point normalized: {R_point}")
     
         R_enc = encode_edwards_point(R_point)
         
@@ -87,8 +84,6 @@ class Ed25519:
         S = (r + k * a) % self.L
         S_enc = S.to_bytes(32, "little")
         
-        #print (f"R_enc: {R_enc}")
-        #print (f"S_enc: {S_enc}")
         return R_enc + S_enc
 
     def verify(self, public_key: bytes, message: bytes, signature: bytes) -> bool:
@@ -105,10 +100,7 @@ class Ed25519:
         # Step 1
         R_enc = signature[:32]
         S_enc = signature[32:]
-        
-        # print(f"R_enc verify: {R_enc}")
-        # print(f"S_enc verify: {S_enc}")
-        
+                
         s_int = int.from_bytes(S_enc, "little")
         # Reject if s is not canonical
         if s_int >= self.L:
@@ -117,9 +109,7 @@ class Ed25519:
         try:
             # Step 2
             R_point = decode_edwards_point(R_enc)
-            # print(f"R_point verify: {R_point}")
             A_point = decode_edwards_point(public_key)
-            # print(f"A_point verify: {A_point}")
         except Exception:
             return False
 
@@ -139,7 +129,7 @@ class Ed25519:
         
         return normalize_extended(eight_R) == normalize_extended(eight_P)
 
-        # This is the unbatched verification code
+        # This is the code for other verification equation 
         # # Step 4
         # S = s_int % self.L
         # SB_point = edwards_scalar_mult(S, self.B)
@@ -156,27 +146,35 @@ class Ed25519:
     def verify_batch(self, batch: list[tuple[bytes, bytes, bytes]]) -> bool:
         """
         Batch verification.
-        'batch' is a list of tuples (public_key, message, signature).
-        For each signature, we check that:
-            [8]([s]B - [k]A) - [8]R == identity
-        Then we form a random linear combination of these terms and verify
-        that the sum is the identity.
+        Each tuple in 'batch' is (public_key, message, signature).
+        Instead of computing full point operations per signature, we accumulate:
+        - s_sum: the weighted sum of the s scalars.
+        - r_sum: the weighted sum of the R points.
+        - a_sum: the weighted sum of the public key points scaled by the challenge.
+        At the end, we verify that:
+        8*(r_sum + a_sum - s_sum*B) == identity
         """
-        # Accumulator for the linear combination
-        accumulated = None
-
+        # For a single signature, fall back to individual verification
+        if len(batch) == 1:
+            public_key, message, signature = batch[0]
+            return self.verify(public_key, message, signature)
+        
+        # Initialize the accumulated terms
+        s_sum = 0
+        r_sum = (0, 1, 1, 0)
+        a_sum = (0, 1, 1, 0)
+        
         for (public_key, message, signature) in batch:
             # Check signature length.
             if len(signature) != 64:
                 return False
 
-            R_enc = signature[:32]
-            S_enc = signature[32:]
+            R_enc, S_enc = signature[:32], signature[32:]
             
             # Parse S without reducing modulo L
             s_int = int.from_bytes(S_enc, "little")
             if s_int >= self.L:
-                return False  # Noncanonical s
+                return False  # Non-canonical s
             
             # Decode R and A.
             try:
@@ -188,32 +186,23 @@ class Ed25519:
             # Compute challenge: k = H(R || public_key || message) mod L.
             k = int.from_bytes(sha512(R_enc + public_key + message), "little") % self.L
             
-            # Compute [s]B and [k]A.
-            sB = edwards_scalar_mult(s_int, self.B)
-            kA = edwards_scalar_mult(k, A_point)
-            # Compute T = [s]B - [k]A.
-            T = edwards_point_add_extended(sB, edwards_point_negate(kA))
-            # Compute verification term: U = [8]T - [8]R.
-            U = edwards_point_add_extended(
-                    edwards_scalar_mult(8, T),
-                    edwards_point_negate(edwards_scalar_mult(8, R_point))
-                )
             # Choose a random scalar z for this signature (nonzero modulo L).
             z = int.from_bytes(os.urandom(32), "little") % self.L
             if z == 0:
                 z = 1
-
-            # Multiply U by z.
-            weighted_U = edwards_scalar_mult(z, U)
+            # Accumulate the weighted terms
+            s_sum = (s_sum + z * s_int) % self.L
+            r_sum = edwards_point_add_extended(r_sum, edwards_scalar_mult(z, R_point))
+            a_sum = edwards_point_add_extended(a_sum, edwards_scalar_mult(z * k, A_point))
             
-            # Accumulate the weighted terms.
-            if accumulated is None:
-                accumulated = weighted_U
-            else:
-                accumulated = edwards_point_add_extended(accumulated, weighted_U)
+        # Compute -s_sum mod L and multiply the base point.
+        neg_s_sum = (self.L - s_sum) % self.L
+        neg_s_sum_base = edwards_scalar_mult(neg_s_sum, self.B)
 
-        # Finally, check that the accumulated term is the identity.
-        # If the batch is empty, we can consider it valid.
-        if accumulated is None:
-            return True
-        return is_identity(accumulated)
+        # Combine the accumulators.
+        combined = edwards_point_add_extended(r_sum, a_sum)
+        combined = edwards_point_add_extended(combined, neg_s_sum_base)
+
+        # Multiply by 8 and check against the identity.
+        combined_8 = edwards_scalar_mult(8, combined)
+        return is_identity(combined_8)

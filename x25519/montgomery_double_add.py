@@ -114,7 +114,6 @@ class MontgomeryDoubleAdd:
         accum: Point = P
         
         while k > 0:
-            #print(f"Accumulating: k = {k}, accum = {accum}, result = {result}")
             if k & 1: # If LSB of k is 1 (i.e. k is odd)
                 result = self.add(result, accum) # Add the current point to the result
             accum = self.double(accum) # Otherwise, double the current point

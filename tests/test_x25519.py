@@ -25,12 +25,12 @@ class TestX25519(unittest.TestCase):
     # def test_rfc7748_vector2_double_add(self):
     #     x25519 = X25519("double_and_add")
     #     private_key = bytes.fromhex("4b66e9d4d1b4673c5ad22691957d6af5c11b6421e0ea01d42ca4169e7918ba0d")
-    #     public_key = bytes.fromhex("e5210f12786811d3f4b7959d0538ae2c31dbe7106fc03c3efc4cd549c715a493")
+    #     public_key = bytes.fromhex("e5210f12786811d3f4b7959d0538ae2c31dbe7106fc03c3efc4cd549c715a413")
     #     expected_output = bytes.fromhex("95cbde9476e8907d7aade45cb4b873f88b595a68799fa152e6f8f7647aac7957")
     #     result = x25519.scalar_multiply(private_key, public_key)
     #     print(f"Expected: {expected_output.hex()}, Got: {result.hex()}")  # Debugging
     #     self.assertEqual(result, expected_output)
-        
+
     def test_rfc7748_vector1_ladder(self):
         x25519 = X25519("ladder")
         private_key = bytes.fromhex("a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4")
@@ -38,15 +38,6 @@ class TestX25519(unittest.TestCase):
         expected_output = bytes.fromhex("c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552")
         result = x25519.scalar_multiply(private_key, public_key)
         self.assertEqual(result, expected_output)
-
-    # def test_rfc7748_vector2_ladder(self):
-    #     x25519 = X25519("ladder")
-    #     private_key = bytes.fromhex("4b66e9d4d1b4673c5ad22691957d6af5c11b6421e0ea01d42ca4169e7918ba0d")
-    #     public_key = bytes.fromhex("e5210f12786811d3f4b7959d0538ae2c31dbe7106fc03c3efc4cd549c715a493")
-    #     expected_output = bytes.fromhex("95cbde9476e8907d7aade45cb4b873f88b595a68799fa152e6f8f7647aac7957")
-    #     result = x25519.scalar_multiply(private_key, public_key)
-    #     print(f"Expected: {expected_output.hex()}, Got: {result.hex()}")  # Debugging
-    #     self.assertEqual(result, expected_output)
 
     def test_rfc7748_vector2_ladder(self):
         """Validate RFC 7748 test vector 2 using the ladder and PyNaCl for verification."""
@@ -72,7 +63,7 @@ class TestX25519(unittest.TestCase):
         #print(f"Result from X25519: {result.hex()}")
         #print(f"Result from PyNaCl: {pynacl_result.hex()}")
 
-        # Assert that your implementation matches both the expected RFC value and PyNaCl's output
+        # Assert that implementation matches both the expected RFC value and PyNaCl's output
         self.assertEqual(result, pynacl_result, "Mismatch with PyNaCl result")
         self.assertEqual(result, expected_output, "Mismatch with RFC 7748 expected value")
 
@@ -181,26 +172,45 @@ class TestX25519(unittest.TestCase):
 
 
     def test_performance_comparison(self):
-        """Compare performance of MontgomeryLadder and MontgomeryDoubleAdd."""
+        """Compare performance of MontgomeryLadder and MontgomeryDoubleAdd averaged over multiple runs."""
+        import time
         x25519_ladder = X25519(method='ladder')
         x25519_double_add = X25519(method='double_and_add')
         
         private_key = os.urandom(32)
         base_point = int.to_bytes(9, 32, 'little')
+        
+        iterations = 100
+        total_ladder_time = 0.0
+        total_double_add_time = 0.0
 
-        # Benchmark MontgomeryLadder
-        start_time = time.time()
-        x25519_ladder.scalar_multiply(private_key, base_point)
-        ladder_time = time.time() - start_time
+        # Perform a few warm-up iterations
+        for _ in range(2):
+            x25519_ladder.scalar_multiply(private_key, base_point)
+            x25519_double_add.scalar_multiply(private_key, base_point)
 
-        # Benchmark MontgomeryDoubleAdd
-        start_time = time.time()
-        x25519_double_add.scalar_multiply(private_key, base_point)
-        double_add_time = time.time() - start_time
+        # Run and time each implementation over multiple iterations.
+        for _ in range(iterations):
+            start_time = time.time()
+            result_ladder = x25519_ladder.scalar_multiply(private_key, base_point)
+            total_ladder_time += time.time() - start_time
 
-        print(f"MontgomeryLadder Time: {ladder_time:.6f}s")
-        print(f"MontgomeryDoubleAdd Time: {double_add_time:.6f}s")
-        self.assertTrue(ladder_time <= double_add_time * 5)
+            start_time = time.time()
+            result_double_add = x25519_double_add.scalar_multiply(private_key, base_point)
+            total_double_add_time += time.time() - start_time
+
+            # Verify that both implementations produce the same result.
+            self.assertEqual(result_ladder, result_double_add)
+
+        avg_ladder_time = total_ladder_time / iterations
+        avg_double_add_time = total_double_add_time / iterations
+
+        print(f"MontgomeryLadder Average Time: {avg_ladder_time:.6f}s")
+        print(f"MontgomeryDoubleAdd Average Time: {avg_double_add_time:.6f}s")
+        speedup = avg_double_add_time / avg_ladder_time
+        print(f"MontgomeryLadder is {speedup:.2f} times faster than MontgomeryDoubleAdd.")
+        # For instance, assert that ladder is no more than 5 times slower than double_and_add.
+        self.assertTrue(avg_ladder_time <= avg_double_add_time * 5)
 
 if __name__ == "__main__":
     unittest.main()

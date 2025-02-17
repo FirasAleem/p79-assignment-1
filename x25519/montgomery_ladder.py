@@ -3,7 +3,7 @@ from typing import Optional, Tuple
 
 # A point on the Montgomery curve is represented as (x, y), but y is always None for X25519
 # This is done to keep the interface consistent with the double-and-add implementation
-Point = Tuple[int, Optional[int]]
+Point = Optional[Tuple[int, Optional[int]]]
 
 # Constants for Curve25519
 P = 2**255 - 19  # Prime modulus

@@ -38,10 +38,7 @@ class X25519:
         
         if self.method == 'ladder':
             ladder = MontgomeryLadder(p=P)
-            #print(f"scalar: {scalar}")
-            #rint(f"u: {u}")
             result_x, _ = ladder.scalar_multiply(scalar, (u, None))
-            #print(f"result_x: {result_x}")
         else:  # method == 'double_and_add'
             double_add = MontgomeryDoubleAdd(A=486662, p=P)
             y_coordinate = calculate_y_coordinate(u, 486662, P)

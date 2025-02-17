@@ -89,14 +89,7 @@ def clamp_scalar(scalar_bytes: bytes) -> int:
     """
     if len(scalar_bytes) != 32:
         raise ValueError("Scalar must be exactly 32 bytes.")
-    
-    # scalar = int.from_bytes(scalar_bytes, "little")
-    # # Clamp the scalar: set 3 LSBs to 0, MSB to 0, and 2nd MSB to 1.
-    # scalar &= ~(7)                      # Clear the 3 least significant bits
-    # scalar &= (1 << 254) - 1            # Clear the most significant bit
-    # scalar |= (1 << 254)                # Set the second-most significant bit
-    # return scalar
-    
+        
     scalar_list = list(scalar_bytes)
     scalar_list[0] &= 248   # Clear the 3 least significant bits
     scalar_list[31] &= 127  # Clear the most significant bit
