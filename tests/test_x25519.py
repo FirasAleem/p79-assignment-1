@@ -93,7 +93,7 @@ class TestX25519(unittest.TestCase):
         }
 
         # Iterative scalar multiplication
-        for i in range(1, 2):
+        for i in range(1, 1001):
             result = x25519.scalar_multiply(k, u)
             k, u = result, k  # Set k to the result and u to the old k
             

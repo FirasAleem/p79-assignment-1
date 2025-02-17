@@ -1,7 +1,9 @@
 import os
-import hashlib
 from x25519.utils import mult_inverse
 from ed25519.utils import ( 
+    sha512,
+    secret_expand,
+    compute_public_key,
     edwards_point_add_extended, 
     edwards_scalar_mult, 
     encode_edwards_point, 
@@ -45,23 +47,9 @@ class Ed25519:
 
     def generate_public_key(self, private_key: bytes) -> bytes:
         """
-        Derive a public key from a private key:
-            1. Hash the 32-byte private key with SHA-512.
-            2. Clamp the lower 32 bytes to derive the scalar 'a'.
-            3. Compute A = a * B (using Edwards scalar multiplication).
-            4. Return the compressed encoding of A.
+        Generate the public key from a 32-byte private key.
         """
-        # Step 1
-        h_full = hashlib.sha512(private_key).digest()
-        key = bytearray(h_full[:32])
-        # Step 2 Clamping
-        key[0] &= 248     # Clear the lowest 3 bits of the first byte
-        key[31] &= 127    # Clear the highest bit of the last byte
-        key[31] |= 64     # Set the second-highest bit of the last byte
-
-        a = int.from_bytes(key, "little")
-        A_point = edwards_scalar_mult(a, self.B)
-        return encode_edwards_point(A_point)
+        return compute_public_key(private_key)
 
     def sign(self, private_key: bytes, message: bytes) -> bytes:
         """
@@ -72,30 +60,17 @@ class Ed25519:
             3. Compute A = a * B.
             4. Compute r = SHA-512(prefix || message) mod L.
             5. Compute R = r * B.
-            6. Compute hram = SHA-512(encode(R) || encode(A) || message) mod L.
-            7. Compute S = (r + hram * a) mod L.
+            6. Compute k = SHA-512(encode(R) || encode(A) || message) mod L.
+            7. Compute S = (r + k * a) mod L.
             8. Return the 64-byte signature: encode(R) || S.
+            
         """
-        # Step 1
-        h_full = hashlib.sha512(private_key).digest()
-        key = bytearray(h_full[:32])
-        # Step 2: Clamping
-        key[0] &= 248     # Clear the lowest 3 bits of the first byte
-        key[31] &= 127    # Clear the highest bit of the last byte
-        key[31] |= 64     # Set the second-highest bit of the last byte
-
-        a = int.from_bytes(key, "little")
-        prefix = h_full[32:]
-        
-        # Step 3
-        A_point = edwards_scalar_mult(a, self.B)
-        # print(f"A_point: {A_point}")
-        # A_point = normalize_extended(A_point)
-        # print(f"A_point normalized: {A_point}")
-        A_enc = encode_edwards_point(A_point)
+        # Step 1 - 3 are handled by secret_expand and compute_public_key
+        a, prefix = secret_expand(private_key)
+        A_enc = compute_public_key(private_key)
         
         # Step 4
-        r = int.from_bytes(hashlib.sha512(prefix + message).digest(), "little") % self.L
+        r = int.from_bytes(sha512(prefix + message), "little") % self.L
         
         # Step 5
         R_point = edwards_scalar_mult(r, self.B)
@@ -106,14 +81,14 @@ class Ed25519:
         R_enc = encode_edwards_point(R_point)
         
         # Step 6
-        hram = int.from_bytes(hashlib.sha512(R_enc + A_enc + message).digest(), "little") % self.L
+        k = int.from_bytes(sha512(R_enc + A_enc + message), "little") % self.L
         
         # Step 7
-        S = (r + hram * a) % self.L
+        S = (r + k * a) % self.L
         S_enc = S.to_bytes(32, "little")
         
-        print (f"R_enc: {R_enc}")
-        print (f"S_enc: {S_enc}")
+        #print (f"R_enc: {R_enc}")
+        #print (f"S_enc: {S_enc}")
         return R_enc + S_enc
 
     def verify(self, public_key: bytes, message: bytes, signature: bytes) -> bool:
@@ -122,8 +97,8 @@ class Ed25519:
         
         1. Split the 64-byte signature into R (first 32 bytes) and S (last 32 bytes).
         2. Decode R and the public key A.
-        3. Compute hram = SHA-512(encode(R) || public_key || message) mod L.
-        4. Verify that S * B == R + hram * A.
+        3. Compute k = SHA-512(encode(R) || public_key || message) mod L.
+        4. ~Verify that S * B == R + k * A, 4.~ Verify that [8][S]B = [8]R + [8][k]A.
         """
         if len(signature) != 64:
             return False
@@ -131,8 +106,8 @@ class Ed25519:
         R_enc = signature[:32]
         S_enc = signature[32:]
         
-        print(f"R_enc verify: {R_enc}")
-        print(f"S_enc verify: {S_enc}")
+        # print(f"R_enc verify: {R_enc}")
+        # print(f"S_enc verify: {S_enc}")
         
         s_int = int.from_bytes(S_enc, "little")
         # Reject if s is not canonical
@@ -142,21 +117,21 @@ class Ed25519:
         try:
             # Step 2
             R_point = decode_edwards_point(R_enc)
-            print(f"R_point verify: {R_point}")
+            # print(f"R_point verify: {R_point}")
             A_point = decode_edwards_point(public_key)
-            print(f"A_point verify: {A_point}")
+            # print(f"A_point verify: {A_point}")
         except Exception:
             return False
 
         # Step 3
-        hram = int.from_bytes(hashlib.sha512(R_enc + public_key + message).digest(), "little") % self.L
+        k = int.from_bytes(sha512(R_enc + public_key + message), "little") % self.L
         
         # Compute sB and kA.
         sB = edwards_scalar_mult(s_int, self.B)
-        hA = edwards_scalar_mult(hram, A_point)
+        kA = edwards_scalar_mult(k, A_point)
         
         # Compute P = sB - kA.
-        point = edwards_point_add_extended(sB, edwards_point_negate(hA))
+        point = edwards_point_add_extended(sB, edwards_point_negate(kA))
         
         # Multiply both sides by 8.
         eight_R = edwards_scalar_mult(8, R_point)
@@ -169,8 +144,8 @@ class Ed25519:
         # S = s_int % self.L
         # SB_point = edwards_scalar_mult(S, self.B)
         
-        # hA_point = edwards_scalar_mult(hram, A_point)
-        # R_calc = edwards_point_add_extended(R_point, hA_point)
+        # kA_point = edwards_scalar_mult(k, A_point)
+        # R_calc = edwards_point_add_extended(R_point, kA_point)
         
         # print(f"SB_point: {normalize_extended(SB_point)}")
         # print(f"R_calc: {normalize_extended(R_calc)}")
@@ -211,11 +186,11 @@ class Ed25519:
                 return False
             
             # Compute challenge: k = H(R || public_key || message) mod L.
-            hram = int.from_bytes(hashlib.sha512(R_enc + public_key + message).digest(), "little") % self.L
+            k = int.from_bytes(sha512(R_enc + public_key + message), "little") % self.L
             
             # Compute [s]B and [k]A.
             sB = edwards_scalar_mult(s_int, self.B)
-            kA = edwards_scalar_mult(hram, A_point)
+            kA = edwards_scalar_mult(k, A_point)
             # Compute T = [s]B - [k]A.
             T = edwards_point_add_extended(sB, edwards_point_negate(kA))
             # Compute verification term: U = [8]T - [8]R.

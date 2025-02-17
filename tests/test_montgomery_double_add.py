@@ -34,7 +34,7 @@ class TestMontgomeryDoubleAdd(unittest.TestCase):
         """Test adding two distinct points on the curve."""
         point1 = self.generate_point(9)
         point2 = self.generate_point(123456)
-        print(f"Point 1: {point1}, Point 2: {point2}")
+        #print(f"Point 1: {point1}, Point 2: {point2}")
         
         result = self.curve.add(point1, point2)
         self.assertTrue(self.is_point_on_curve(result))
@@ -82,7 +82,7 @@ class TestMontgomeryDoubleAdd(unittest.TestCase):
         point = self.generate_point(9)
         result = self.curve.scalar_multiply(scalar, point)
         
-        print(f"Resulting point for x = 9 and scalar = {scalar}: {result}")
+        #print(f"Resulting point for x = 9 and scalar = {scalar}: {result}")
         self.assertTrue(self.is_point_on_curve(result))
 
 if __name__ == "__main__":

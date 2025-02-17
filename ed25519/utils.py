@@ -1,4 +1,5 @@
 from x25519.utils import mult_inverse, field_add, field_mul, sqrt_mod
+import hashlib
 
 # Prime modulus (same as Curve25519)
 prime_mod = 2**255 - 19
@@ -14,6 +15,45 @@ B_AFFINE = (
     15112221349535400772501151409588531511454012693041857206046113283949847762202,
     46316835694926478169428394003475163141307993866256225615783033603165251855960,
 )
+
+def sha512(data: bytes) -> bytes:
+    """Compute the SHA-512 hash of the input data."""
+    return hashlib.sha512(data).digest()
+
+def secret_expand(secret: bytes) -> tuple[int, bytes]:
+    """
+    Expand the 32-byte Ed25519 private key:
+    
+        1. Hash with SHA-512.
+        2. Clamp the first 32 bytes to derive scalar `a`.
+        3. Return `(a, prefix)`, where:
+            - `a` is the clamped scalar.
+            - `prefix` is used for nonce generation in signing.
+    """
+    if len(secret) != 32:
+        raise ValueError("Invalid private key length")
+    
+    h = sha512(secret)
+    
+    key = bytearray(h[:32])
+    key[0] &= 248     # Clear the lowest 3 bits of the first byte
+    key[31] &= 127    # Clear the highest bit of the last byte
+    key[31] |= 64     # Set the second-highest bit of the last byte
+    
+    a = int.from_bytes(key, "little")  # Clamped private scalar
+    return a, h[32:]  # (private scalar, prefix)
+
+def compute_public_key(private_key: bytes) -> bytes:
+    """
+    Compute the public key from a private key.
+    
+    This expands the secret key, clamps it, computes `A = a * B`, and returns 
+    the compressed encoding of A.
+    """
+    a, _ = secret_expand(private_key)  # Expand and clamp the private key
+    A_point = edwards_scalar_mult(a, affine_to_extended(B_AFFINE))  # Compute A = a * B
+    return encode_edwards_point(A_point)  # Encode A to compressed form
+    
 # Conversions Between Affine and Extended Coordinates
 
 def affine_to_extended(P_aff: tuple[int, int]) -> tuple[int, int, int, int]:
@@ -63,8 +103,9 @@ def decode_edwards_point(s: bytes) -> tuple[int, int, int, int]:
     """
     if len(s) != 32:
         raise ValueError("Invalid point encoding length")
-    y = int.from_bytes(s, "little") & ((1 << 255) - 1)
-    sign = (s[31] >> 7) & 1
+    y = int.from_bytes(s, "little")
+    sign = y >> 255
+    y &= (1 << 255) - 1
 
     y2 = field_mul(y, y, prime_mod)
     num = field_add(y2, -1, prime_mod)              # y^2 - 1
@@ -172,8 +213,6 @@ def edwards_scalar_mult(
         scalar //= 2
 
     return result
-
-
 
 def normalize_extended(P: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
     """Normalize an extended Edwards point so that Z = 1."""

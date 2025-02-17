@@ -23,8 +23,8 @@ class TestX25519(unittest.TestCase):
         # Use PyNaCl for reference
         expected_output = crypto_scalarmult(max_scalar_bytes, public_key)
         
-        print(f"Result for max scalar: {result_x.hex()}")
-        print(f"Expected (PyNaCl) result: {expected_output.hex()}")
+        #print(f"Result for max scalar: {result_x.hex()}")
+        #print(f"Expected (PyNaCl) result: {expected_output.hex()}")
 
         # Assert that the results match
         self.assertEqual(result_x, expected_output, "Mismatch between X25519 and PyNaCl for max scalar")
@@ -41,8 +41,8 @@ class TestX25519(unittest.TestCase):
         # Use PyNaCl for reference
         expected_output = crypto_scalarmult(large_scalar_bytes, base_point)
         
-        print(f"Result from X25519: {result_x.hex()}")
-        print(f"Expected (PyNaCl): {expected_output.hex()}")
+        #print(f"Result from X25519: {result_x.hex()}")
+        #print(f"Expected (PyNaCl): {expected_output.hex()}")
 
         # Assert that the result matches PyNaCl's output
         self.assertEqual(result_x, expected_output, "Mismatch with PyNaCl result for large scalar")
